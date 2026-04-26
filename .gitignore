@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.production
+**/.env
+**/.env.local
+**/.env.production
+
+# Kubeconfig - contains cluster credentials
+k8s/*.yaml~
+k8s/k8s-*-kubeconfig.yaml
+
+# Firebase service account - contains private key
+**/*firebase-adminsdk*.json
+**/firebase-adminsdk*.json
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+dist/
+build/

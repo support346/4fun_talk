@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  backend1:
+    build:
+      context: ./Backend1
+      dockerfile: Dockerfile
+    container_name: user-management
+    ports:
+      - "3003:3003"
+    environment:
+      NODE_ENV: development
+      PORT: "3003"
+      MONGODB_URI: ${MONGODB_URI}
+      API_KEY: ${API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      ALLOWED_ORIGINS: "*"
+    volumes:
+      # Mount Firebase service account JSON for local dev
+      - ./Backend1/config/test4fun-d78d9-firebase-adminsdk-fbsvc-a965815181.json:/app/config/test4fun-d78d9-firebase-adminsdk-fbsvc-a965815181.json:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  backend2:
+    build:
+      context: ./Backend2
+      dockerfile: Dockerfile
+    container_name: zegocloud-call
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      ZEGO_APP_ID: ${ZEGO_APP_ID}
+      ZEGO_SERVER_SECRET: ${ZEGO_SERVER_SECRET}
+      ZEGO_TOKEN_EXPIRE: "3600"
+      ALLOWED_ORIGINS: "*"
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+volumes:
+  redis-data:
+
+networks:
+  backend-network:
+    driver: bridge

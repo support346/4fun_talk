@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend2-deployment
+  namespace: verified-backend
+  labels:
+    app: backend2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend2
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend2
+          # Substituted by CI/CD: envsubst '${REGISTRY} ${IMAGE_TAG}'
+          image: ${REGISTRY}/backend2:${IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: ZEGO_TOKEN_EXPIRE
+              value: "3600"
+            # Secrets
+            - name: ZEGO_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backend2-secrets
+                  key: ZEGO_APP_ID
+            - name: ZEGO_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend2-secrets
+                  key: ZEGO_SERVER_SECRET
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: backend2-secrets
+                  key: ALLOWED_ORIGINS
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3

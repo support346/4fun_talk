@@ -1,0 +1,172 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}
+
+jobs:
+  # ────────────────────────────────────────────
+  # Job 1: Test Backend1 (Backend2 has no tests)
+  # ADD BACKEND3: copy this job block, rename to test-backend3,
+  # update cache-dependency-path and the npm test command.
+  # ────────────────────────────────────────────
+  test-backend1:
+    name: Test Backend1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Backend1/package-lock.json
+
+      - name: Install dependencies
+        run: cd Backend1 && npm ci
+
+      - name: Run tests
+        run: cd Backend1 && npm test
+        env:
+          NODE_ENV: test
+
+  # ── BACKEND3 TEST JOB (add here if Backend3 has tests) ──────────────────────
+  # test-backend3:
+  #   name: Test Backend3
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: "npm"
+  #         cache-dependency-path: Backend3/package-lock.json
+  #     - name: Install dependencies
+  #       run: cd Backend3 && npm ci
+  #     - name: Run tests
+  #       run: cd Backend3 && npm test
+  #       env:
+  #         NODE_ENV: test
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  # ────────────────────────────────────────────
+  # Job 2: Build & push Docker images to DOCR
+  # (only on push to main, not on PRs)
+  # ────────────────────────────────────────────
+  build-push:
+    name: Build & Push Images
+    # ADD BACKEND3: add test-backend3 here once you uncomment that job above
+    needs: test-backend1
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_ACCESS_TOKEN }}
+
+      - name: Login to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build & Push Backend1 (User Management)
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/backend1:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/backend1:latest \
+            ./Backend1
+          docker push ${{ env.REGISTRY }}/backend1:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/backend1:latest
+
+      - name: Build & Push Backend2 (ZegoCloud Calls)
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/backend2:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/backend2:latest \
+            ./Backend2
+          docker push ${{ env.REGISTRY }}/backend2:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/backend2:latest
+
+  # ────────────────────────────────────────────
+  # Job 3: Deploy to DigitalOcean Kubernetes
+  # ────────────────────────────────────────────
+  deploy:
+    name: Deploy to DOKS
+    needs: build-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_ACCESS_TOKEN }}
+
+      - name: Configure kubectl for DOKS cluster
+        run: doctl kubernetes cluster kubeconfig save ${{ secrets.DO_K8S_CLUSTER_NAME }}
+
+      - name: Link DOCR to DOKS (allows cluster to pull images without image pull secrets)
+        run: doctl kubernetes cluster registry add ${{ secrets.DO_K8S_CLUSTER_NAME }} || true
+
+      - name: Create namespace
+        run: kubectl create namespace verified-backend --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update Backend1 Kubernetes Secret
+        run: |
+          kubectl create secret generic backend1-secrets \
+            --namespace=verified-backend \
+            --from-literal=MONGODB_URI="${{ secrets.MONGODB_URI }}" \
+            --from-literal=API_KEY="${{ secrets.API_KEY }}" \
+            --from-literal=FIREBASE_SERVICE_ACCOUNT="${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" \
+            --from-literal=ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update Backend2 Kubernetes Secret
+        run: |
+          kubectl create secret generic backend2-secrets \
+            --namespace=verified-backend \
+            --from-literal=ZEGO_APP_ID="${{ secrets.ZEGO_APP_ID }}" \
+            --from-literal=ZEGO_SERVER_SECRET="${{ secrets.ZEGO_SERVER_SECRET }}" \
+            --from-literal=ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Redis
+        run: kubectl apply -f k8s/redis.yaml
+
+      - name: Deploy Backend1
+        run: |
+          export REGISTRY="${{ env.REGISTRY }}"
+          export IMAGE_TAG="${{ github.sha }}"
+          envsubst '${REGISTRY} ${IMAGE_TAG}' < k8s/backend1/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/backend1/service.yaml
+          kubectl apply -f k8s/backend1/hpa.yaml
+
+      - name: Deploy Backend2
+        run: |
+          export REGISTRY="${{ env.REGISTRY }}"
+          export IMAGE_TAG="${{ github.sha }}"
+          envsubst '${REGISTRY} ${IMAGE_TAG}' < k8s/backend2/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/backend2/service.yaml
+          kubectl apply -f k8s/backend2/hpa.yaml
+
+      - name: Apply Ingress
+        run: kubectl apply -f k8s/ingress.yaml
+
+      - name: Wait for rollouts to complete
+        run: |
+          kubectl rollout status deployment/backend1-deployment -n verified-backend --timeout=5m
+          kubectl rollout status deployment/backend2-deployment -n verified-backend --timeout=5m
+
+      - name: Show ingress external IP
+        run: |
+          echo "Waiting for Load Balancer IP..."
+          kubectl get ingress -n verified-backend -w &
+          sleep 30
+          kubectl get ingress -n verified-backend

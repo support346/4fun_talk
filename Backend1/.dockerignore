@@ -1,0 +1,9 @@
+node_modules
+.git
+.gitignore
+*.md
+.env
+.env.*
+tests/
+jest.config.js
+config/test4fun-d78d9-firebase-adminsdk-fbsvc-a965815181.json

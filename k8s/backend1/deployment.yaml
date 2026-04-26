@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend1-deployment
+  namespace: verified-backend
+  labels:
+    app: backend1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend1
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend1
+          # Substituted by CI/CD: envsubst '${REGISTRY} ${IMAGE_TAG}'
+          image: ${REGISTRY}/backend1:${IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3003
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3003"
+            - name: REDIS_HOST
+              value: "redis-service"
+            - name: REDIS_PORT
+              value: "6379"
+            # Secrets
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: backend1-secrets
+                  key: MONGODB_URI
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backend1-secrets
+                  key: API_KEY
+            - name: FIREBASE_SERVICE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: backend1-secrets
+                  key: FIREBASE_SERVICE_ACCOUNT
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: backend1-secrets
+                  key: ALLOWED_ORIGINS
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/auth/health
+              port: 3003
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/auth/health
+              port: 3003
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
