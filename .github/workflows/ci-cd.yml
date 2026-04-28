@@ -125,7 +125,6 @@ jobs:
             --from-literal=MONGODB_URI="${{ secrets.MONGODB_URI }}" \
             --from-literal=API_KEY="${{ secrets.API_KEY }}" \
             --from-literal=FIREBASE_SERVICE_ACCOUNT="${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" \
-            --from-literal=ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create/Update Backend2 Kubernetes Secret
@@ -134,7 +133,6 @@ jobs:
             --namespace=verified-backend \
             --from-literal=ZEGO_APP_ID="${{ secrets.ZEGO_APP_ID }}" \
             --from-literal=ZEGO_SERVER_SECRET="${{ secrets.ZEGO_SERVER_SECRET }}" \
-            --from-literal=ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy Redis

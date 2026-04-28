@@ -53,11 +53,6 @@ spec:
                 secretKeyRef:
                   name: backend1-secrets
                   key: FIREBASE_SERVICE_ACCOUNT
-            - name: ALLOWED_ORIGINS
-              valueFrom:
-                secretKeyRef:
-                  name: backend1-secrets
-                  key: ALLOWED_ORIGINS
           resources:
             requests:
               cpu: "200m"
