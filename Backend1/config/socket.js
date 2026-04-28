@@ -5,11 +5,7 @@ let io;
 const onlineUsers = new Map(); 
 
 export const initSocket = (server) => {
-  io = new Server(server, {
-    cors: {
-      origin: "*", // restrict in production
-    },
-  });
+  io = new Server(server, {});
 
   io.use(async (socket, next) => {
     try {
