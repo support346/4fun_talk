@@ -78,6 +78,8 @@ const joinRoom = (req, res) => {
       participants: room.participants,
     });
   } catch (err) {
+    console.log(err);
+    
     return error(res, err.message, 500);
   }
 };
